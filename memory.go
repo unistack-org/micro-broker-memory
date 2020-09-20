@@ -2,7 +2,6 @@
 package memory
 
 import (
-	"context"
 	"errors"
 	"math/rand"
 	"sync"
@@ -237,9 +236,7 @@ func (m *memorySubscriber) Unsubscribe() error {
 }
 
 func NewBroker(opts ...broker.Option) broker.Broker {
-	options := broker.Options{
-		Context: context.Background(),
-	}
+	options := broker.NewOptions()
 
 	rand.Seed(time.Now().UnixNano())
 	for _, o := range opts {
