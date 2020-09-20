@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/micro/go-micro/v3/broker"
-	maddr "github.com/micro/go-micro/v3/util/addr"
-	mnet "github.com/micro/go-micro/v3/util/net"
+	"github.com/unistack-org/micro/v3/broker"
+	"github.com/unistack-org/micro/v3/logger"
+	maddr "github.com/unistack-org/micro/v3/util/addr"
+	mnet "github.com/unistack-org/micro/v3/util/net"
 )
 
 type memoryBroker struct {
@@ -21,6 +22,13 @@ type memoryBroker struct {
 	sync.RWMutex
 	connected   bool
 	Subscribers map[string][]*memorySubscriber
+}
+
+type memoryEvent struct {
+	opts    broker.Options
+	topic   string
+	err     error
+	message interface{}
 }
 
 type memorySubscriber struct {
@@ -95,10 +103,37 @@ func (m *memoryBroker) Publish(topic string, msg *broker.Message, opts ...broker
 		return nil
 	}
 
+	var v interface{}
+	if m.opts.Codec != nil {
+		buf, err := m.opts.Codec.Marshal(msg)
+		if err != nil {
+			return err
+		}
+		v = buf
+	} else {
+		v = msg
+	}
+
+	p := &memoryEvent{
+		topic:   topic,
+		message: v,
+		opts:    m.opts,
+	}
+
+	eh := m.opts.ErrorHandler
+
 	for _, sub := range subs {
-		if err := sub.handler(msg); err != nil {
-			if eh := sub.opts.ErrorHandler; eh != nil {
-				eh(msg, err)
+		if err := sub.handler(p); err != nil {
+			p.err = err
+			if sub.opts.ErrorHandler != nil {
+				eh = sub.opts.ErrorHandler
+			}
+			if eh != nil {
+				eh(p)
+			} else {
+				if logger.V(logger.ErrorLevel) {
+					logger.Error(err)
+				}
 			}
 			continue
 		}
@@ -120,9 +155,14 @@ func (m *memoryBroker) Subscribe(topic string, handler broker.Handler, opts ...b
 		o(&options)
 	}
 
+	id, err := uuid.NewRandom()
+	if err != nil {
+		return nil, err
+	}
+
 	sub := &memorySubscriber{
 		exit:    make(chan bool, 1),
-		id:      uuid.New().String(),
+		id:      id.String(),
 		topic:   topic,
 		handler: handler,
 		opts:    options,
@@ -151,6 +191,36 @@ func (m *memoryBroker) Subscribe(topic string, handler broker.Handler, opts ...b
 
 func (m *memoryBroker) String() string {
 	return "memory"
+}
+
+func (m *memoryEvent) Topic() string {
+	return m.topic
+}
+
+func (m *memoryEvent) Message() *broker.Message {
+	switch v := m.message.(type) {
+	case *broker.Message:
+		return v
+	case []byte:
+		msg := &broker.Message{}
+		if err := m.opts.Codec.Unmarshal(v, msg); err != nil {
+			if logger.V(logger.ErrorLevel) {
+				logger.Errorf("[memory]: failed to unmarshal: %v\n", err)
+			}
+			return nil
+		}
+		return msg
+	}
+
+	return nil
+}
+
+func (m *memoryEvent) Ack() error {
+	return nil
+}
+
+func (m *memoryEvent) Error() error {
+	return m.err
 }
 
 func (m *memorySubscriber) Options() broker.SubscribeOptions {
