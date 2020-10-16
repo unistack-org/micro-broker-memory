@@ -2,6 +2,7 @@
 package memory
 
 import (
+	"context"
 	"errors"
 	"math/rand"
 	"sync"
@@ -36,6 +37,7 @@ type memorySubscriber struct {
 	exit    chan bool
 	handler broker.Handler
 	opts    broker.SubscribeOptions
+	ctx     context.Context
 }
 
 func (m *memoryBroker) Options() broker.Options {
@@ -46,7 +48,7 @@ func (m *memoryBroker) Address() string {
 	return m.addr
 }
 
-func (m *memoryBroker) Connect() error {
+func (m *memoryBroker) Connect(ctx context.Context) error {
 	m.Lock()
 	defer m.Unlock()
 
@@ -69,7 +71,7 @@ func (m *memoryBroker) Connect() error {
 	return nil
 }
 
-func (m *memoryBroker) Disconnect() error {
+func (m *memoryBroker) Disconnect(ctx context.Context) error {
 	m.Lock()
 	defer m.Unlock()
 
@@ -89,7 +91,7 @@ func (m *memoryBroker) Init(opts ...broker.Option) error {
 	return nil
 }
 
-func (m *memoryBroker) Publish(topic string, msg *broker.Message, opts ...broker.PublishOption) error {
+func (m *memoryBroker) Publish(ctx context.Context, topic string, msg *broker.Message, opts ...broker.PublishOption) error {
 	m.RLock()
 	if !m.connected {
 		m.RUnlock()
@@ -141,7 +143,7 @@ func (m *memoryBroker) Publish(topic string, msg *broker.Message, opts ...broker
 	return nil
 }
 
-func (m *memoryBroker) Subscribe(topic string, handler broker.Handler, opts ...broker.SubscribeOption) (broker.Subscriber, error) {
+func (m *memoryBroker) Subscribe(ctx context.Context, topic string, handler broker.Handler, opts ...broker.SubscribeOption) (broker.Subscriber, error) {
 	m.RLock()
 	if !m.connected {
 		m.RUnlock()
@@ -149,10 +151,7 @@ func (m *memoryBroker) Subscribe(topic string, handler broker.Handler, opts ...b
 	}
 	m.RUnlock()
 
-	var options broker.SubscribeOptions
-	for _, o := range opts {
-		o(&options)
-	}
+	options := broker.NewSubscribeOptions(opts...)
 
 	id, err := uuid.NewRandom()
 	if err != nil {
@@ -165,6 +164,7 @@ func (m *memoryBroker) Subscribe(topic string, handler broker.Handler, opts ...b
 		topic:   topic,
 		handler: handler,
 		opts:    options,
+		ctx:     ctx,
 	}
 
 	m.Lock()
@@ -230,21 +230,16 @@ func (m *memorySubscriber) Topic() string {
 	return m.topic
 }
 
-func (m *memorySubscriber) Unsubscribe() error {
+func (m *memorySubscriber) Unsubscribe(ctx context.Context) error {
 	m.exit <- true
 	return nil
 }
 
 func NewBroker(opts ...broker.Option) broker.Broker {
-	options := broker.NewOptions()
-
 	rand.Seed(time.Now().UnixNano())
-	for _, o := range opts {
-		o(&options)
-	}
 
 	return &memoryBroker{
-		opts:        options,
+		opts:        broker.NewOptions(opts...),
 		Subscribers: make(map[string][]*memorySubscriber),
 	}
 }
