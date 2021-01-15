@@ -133,7 +133,7 @@ func (m *memoryBroker) Publish(ctx context.Context, topic string, msg *broker.Me
 				eh(p)
 			} else {
 				if m.opts.Logger.V(logger.ErrorLevel) {
-					m.opts.Logger.Error(err.Error())
+					m.opts.Logger.Error(m.opts.Context, err.Error())
 				}
 			}
 			continue
@@ -204,7 +204,7 @@ func (m *memoryEvent) Message() *broker.Message {
 		msg := &broker.Message{}
 		if err := m.opts.Codec.Unmarshal(v, msg); err != nil {
 			if m.opts.Logger.V(logger.ErrorLevel) {
-				m.opts.Logger.Error("[memory]: failed to unmarshal: %v", err)
+				m.opts.Logger.Error(m.opts.Context, "[memory]: failed to unmarshal: %v", err)
 			}
 			return nil
 		}
