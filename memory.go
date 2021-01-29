@@ -192,6 +192,10 @@ func (m *memoryBroker) String() string {
 	return "memory"
 }
 
+func (m *memoryBroker) Name() string {
+	return m.opts.Name
+}
+
 func (m *memoryEvent) Topic() string {
 	return m.topic
 }
